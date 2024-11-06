@@ -1,54 +1,57 @@
 import re
 import pandas as pd
-import nltk
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
-def preprocessor(data):
-    pattern = '\d{1,2}\/\d{1,2}\/\d{2},\s\d{1,2}:\d{2}\s[APap][Mm] -\s'
+def preprocess_chat(chat_lines):
+    data = []
+    # Pattern to match messages with date, time, sender, and message
+    pattern = r'(\d{1,2}/\d{1,2}/\d{4}), (\d{1,2}:\d{2} (?:AM|PM|am|pm)) - (.*?): (.*)'
+    # Pattern for system messages without a sender
+    no_sender_pattern = r'(\d{1,2}/\d{1,2}/\d{4}), (\d{1,2}:\d{2} (?:AM|PM|am|pm)) - (.*)'
 
-    messages = re.split(pattern, data)[1:]
-    dat = re.findall(pattern, data)
-    dates = [match.replace('\u202f', ' ') for match in dat]
+    for i, line in enumerate(chat_lines):
+        try:
+            match = re.match(pattern, line, re.IGNORECASE)
+            if match:
+                date, time, sender, message = match.groups()
+                data.append([date, time, sender, message])
+            else:
+                match_no_sender = re.match(no_sender_pattern, line, re.IGNORECASE)
+                if match_no_sender:
+                    date, time, message = match_no_sender.groups()
+                    data.append([date, time, "System Notification", message])
+                else:
+                    # Append multiline message to the last entry
+                    if data:
+                        data[-1][-1] += " " + line.strip()
+        except Exception as e:
+            print(f"Skipping line {i} due to parsing error: {line.strip()}")
+            continue
 
-    df = pd.DataFrame({'user_message': messages, 'message_date': dates})
-    df['message_date'] = pd.to_datetime(df['message_date'], format='%d/%m/%y, %I:%M %p - ')
+    # Create a DataFrame with the appropriate columns
+    chat_df = pd.DataFrame(data, columns=['Date', 'Time', 'user', 'message'])
 
-    df.rename(columns={'message_date': 'date'}, inplace=True)
+    # Combine Date and Time into a single DateTime column
+    chat_df['DateTime'] = pd.to_datetime(chat_df['Date'] + ' ' + chat_df['Time'], errors='coerce')
+    chat_df.drop(['Date', 'Time'], axis=1, inplace=True)
 
-    users = []
-    messages = []
-    for message in df['user_message']:
-        entry = re.split('([\w\W]+?):\s', message)
-        if entry[1:]:  # user name
-            users.append(entry[1])
-            messages.append(entry[2])
+    # Extract additional date information for analysis
+    chat_df['only_date'] = chat_df['DateTime'].dt.date
+    chat_df['year'] = chat_df['DateTime'].dt.year
+    chat_df['month'] = chat_df['DateTime'].dt.strftime('%B')
+    chat_df['month_num'] = chat_df['DateTime'].dt.month
+    chat_df['day_name'] = chat_df['DateTime'].dt.day_name()
+
+    # Define periods based on the time of day
+    def get_period(hour):
+        if 5 <= hour < 12:
+            return "morning"
+        elif 12 <= hour < 17:
+            return "afternoon"
+        elif 17 <= hour < 21:
+            return "evening"
         else:
-            users.append('Group notification')
-            messages.append(entry[0])
+            return "night"
 
-    df['user'] = users
-    df['message'] = messages
-    df.drop(columns=['user_message'], inplace=True)
+    chat_df['period'] = chat_df['DateTime'].dt.hour.apply(get_period)
 
-    df['only_date'] = df['date'].dt.date
-    df['year'] = df['date'].dt.year
-    df['month_num'] = df['date'].dt.month
-    df['month'] = df['date'].dt.month_name()
-    df['day'] = df['date'].dt.day
-    df['day_name'] = df['date'].dt.day_name()
-    df['hour'] = df['date'].dt.strftime('%I')
-    df['minute'] = df['date'].dt.minute
-    df['am_pm'] = df['date'].dt.strftime('%p')
-
-    period = []
-    for time_components in df[['hour', 'minute', 'am_pm']].astype(str).agg(' '.join, axis=1):
-        hour, minute, am_pm = time_components.split()
-        if hour == '12':
-            period.append(hour + "-" + '00')
-        elif hour == '0':
-            period.append('00' + "-" + str(int(hour) + 1))
-        else:
-            period.append(hour + "-" + str(int(hour) + 1))
-
-    df['period'] = period
-    return df
+    return chat_df

@@ -1,29 +1,39 @@
 import streamlit as st
-import preprocessor, helper
+import preprocessor  # Import the module
+import helper
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-st.sidebar.title("Whatsapp Chat Analyzer")
+st.sidebar.title("WhatsApp Chat Analyzer")
 
-uploaded_file = st.sidebar.file_uploader("Choose a file")
+# File uploader in the sidebar
+uploaded_file = st.sidebar.file_uploader("Choose a WhatsApp chat file", type="txt")
+
 if uploaded_file is not None:
+    # Read the uploaded file and decode it
     bytes_data = uploaded_file.getvalue()
     data = bytes_data.decode("utf-8")
-    df = preprocessor.preprocessor(data)
+    
+    # Use the correct function name from preprocessor.py
+    df = preprocessor.preprocess_chat(data.splitlines())
 
-    # fetch unique users
+    # Fetch unique users
     user_list = df['user'].unique().tolist()
 
-    user_list.remove('Group notification')
+    # Remove "Group notification" and prepare user selection options
+    if 'Group notification' in user_list:
+        user_list.remove('Group notification')
     user_list.sort()
-    user_list.insert(0, "Overall")
+    user_list.insert(0, "Overall")  # Add an option for "Overall" analysis
 
-    selected_user = st.sidebar.selectbox("Show analysis wrt", user_list)
+    # User selection for analysis
+    selected_user = st.sidebar.selectbox("Show analysis with respect to", user_list)
 
+    # Button to trigger analysis
     if st.sidebar.button("Show Analysis"):
 
-        # stats area
-        num_messages, words, num_media_messages, num_links = helper.fetch_stats(selected_user,df)
+        # Display top statistics
+        num_messages, words, num_media_messages, num_links = helper.fetch_stats(selected_user, df)
         st.title("Top Statistics")
         col1, col2, col3, col4 = st.columns(4)
 
@@ -36,7 +46,7 @@ if uploaded_file is not None:
         with col3:
             st.header("Media Shared")
             st.title(num_media_messages)
-        with col3:
+        with col4:
             st.header("Links Shared")
             st.title(num_links)
 
@@ -44,12 +54,12 @@ if uploaded_file is not None:
         st.title("Monthly Timeline")
         timeline = helper.monthly_timeline(selected_user, df)
         fig, ax = plt.subplots()
-        plt.plot(timeline['time'], timeline['message'], color='green')
+        ax.plot(timeline['time'], timeline['message'], color='green')
         plt.xticks(rotation='vertical')
         st.pyplot(fig)
 
-        # activity map
-        st.title('Activity Map')
+        # Activity map
+        st.title("Activity Map")
         col1, col2 = st.columns(2)
 
         with col1:
@@ -64,27 +74,26 @@ if uploaded_file is not None:
             st.header("Most Busy Month")
             busy_month = helper.month_activity_map(selected_user, df)
             fig, ax = plt.subplots()
-            ax.bar(busy_month.values, busy_month.index, color='orange')
-            plt.xticks(rotation= 'vertical')
+            ax.bar(busy_month.index, busy_month.values, color='orange')
+            plt.xticks(rotation='vertical')
             st.pyplot(fig)
 
+        # Weekly activity heatmap
         st.header("Weekly Activity Map")
         user_heatmap = helper.heatmap_activity(selected_user, df)
         fig, ax = plt.subplots()
-        ax = sns.heatmap(user_heatmap)
+        sns.heatmap(user_heatmap, ax=ax, cmap="YlGnBu")
         st.pyplot(fig)
 
-
-        # daily timeline
+        # Daily timeline
         st.title("Daily Timeline")
         daily_timeline = helper.daily_timeline(selected_user, df)
         fig, ax = plt.subplots()
-        plt.plot(daily_timeline['only_date'], daily_timeline['message'], color='black')
+        ax.plot(daily_timeline['only_date'], daily_timeline['message'], color='black')
         plt.xticks(rotation='vertical')
         st.pyplot(fig)
 
-
-        # finding the busiest users in the group(group level)
+        # Busiest users (group level)
         if selected_user == 'Overall':
             st.title("Most Active Users")
             x, new_df = helper.most_active_user(df)
@@ -100,22 +109,20 @@ if uploaded_file is not None:
             with col2:
                 st.dataframe(new_df)
 
-        # wordcloud
+        # Word cloud
         st.title("Word Cloud")
         df_wc = helper.create_wordcloud(selected_user, df)
         fig, ax = plt.subplots()
         ax.imshow(df_wc)
+        ax.axis('off')  # Remove axes for better visualization
         st.pyplot(fig)
 
-        # emoji analysis
+        # Emoji analysis
         st.title("Emoji Analysis")
         emoji_df = helper.emoji_helper(selected_user, df).head(15)
         st.dataframe(emoji_df)
 
-        #Sentiment analysis
+        # Sentiment analysis
         st.title("Sentiment Analysis")
         result = helper.sentiment_analysis(selected_user, df)
-        print(result)
-        st.text(result)
-
-        #heat map
+        st.write(result)
