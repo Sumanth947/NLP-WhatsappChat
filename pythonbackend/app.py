@@ -14,7 +14,9 @@ if uploaded_file is not None:
     # fetch unique users
     user_list = df['user'].unique().tolist()
 
-    user_list.remove('Group notification')
+    if 'Group notification' in user_list:
+        user_list.remove('Group notification')
+
     user_list.sort()
     user_list.insert(0, "Overall")
 
@@ -119,3 +121,4 @@ if uploaded_file is not None:
         st.text(result)
 
         #heat map
+        

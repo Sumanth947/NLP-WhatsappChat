@@ -4,7 +4,7 @@ import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
 def preprocessor(data):
-    pattern = '\d{1,2}\/\d{1,2}\/\d{2},\s\d{1,2}:\d{2}\s[APap][Mm] -\s'
+    pattern = r'\d{1,2}/\d{1,2}/\d{2},\s\d{1,2}:\d{2}\s[APap][Mm] - '
 
     messages = re.split(pattern, data)[1:]
     dat = re.findall(pattern, data)
@@ -18,7 +18,7 @@ def preprocessor(data):
     users = []
     messages = []
     for message in df['user_message']:
-        entry = re.split('([\w\W]+?):\s', message)
+        entry = re.split(r'([\w\W]+?):\s', message)
         if entry[1:]:  # user name
             users.append(entry[1])
             messages.append(entry[2])
@@ -29,6 +29,10 @@ def preprocessor(data):
     df['user'] = users
     df['message'] = messages
     df.drop(columns=['user_message'], inplace=True)
+
+    # Check if 'Group notification' is in the user list and remove if present
+    if 'Group notification' in df['user'].values:
+        df = df[df['user'] != 'Group notification']
 
     df['only_date'] = df['date'].dt.date
     df['year'] = df['date'].dt.year
@@ -42,13 +46,20 @@ def preprocessor(data):
 
     period = []
     for time_components in df[['hour', 'minute', 'am_pm']].astype(str).agg(' '.join, axis=1):
-        hour, minute, am_pm = time_components.split()
-        if hour == '12':
-            period.append(hour + "-" + '00')
-        elif hour == '0':
-            period.append('00' + "-" + str(int(hour) + 1))
-        else:
-            period.append(hour + "-" + str(int(hour) + 1))
+        try:
+            hour, minute, am_pm = time_components.split()
+            hour_int = int(hour)
+
+            # Adjust the hour for the period range, handle 12-hour format
+            if hour_int == 12:
+                next_hour = '01' if am_pm.lower() == 'am' else '00'  # Handle noon and midnight cases
+            else:
+                next_hour = str((hour_int % 12) + 1).zfill(2)
+
+            period.append(f"{hour.zfill(2)}-{next_hour} {am_pm}")
+        except ValueError:
+            # Append a default or error value if unpacking fails
+            period.append("Unknown")
 
     df['period'] = period
     return df

@@ -5,11 +5,37 @@ from collections import Counter
 import emoji
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from random import randint
+from nltk.corpus import movie_reviews
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.pipeline import make_pipeline
+import nltk
 
+# Ensure necessary data is downloaded
+nltk.download('movie_reviews')
+
+# Initialize URL extractor
 extract = URLExtract()
 
-def fetch_stats(selected_user,df):
+# Train a Naive Bayes model on the NLTK movie reviews dataset
+def train_naive_bayes():
+    documents = [(movie_reviews.raw(fileid), category)
+                 for category in movie_reviews.categories()
+                 for fileid in movie_reviews.fileids(category)]
+    
+    texts, labels = zip(*documents)
+    X_train, X_test, y_train, y_test = train_test_split(texts, labels, test_size=0.2, random_state=42)
+    
+    # Use CountVectorizer with MultinomialNB
+    model = make_pipeline(CountVectorizer(), MultinomialNB())
+    model.fit(X_train, y_train)
+    return model
 
+# Initialize Naive Bayes model
+nb_model = train_naive_bayes()
+
+def fetch_stats(selected_user, df):
     if selected_user != 'Overall':
         df = df[df['user'] == selected_user]
 
@@ -32,7 +58,6 @@ def fetch_stats(selected_user,df):
     return num_messages, len(words), num_media_messages, len(links)
 
 def most_active_user(df):
-
     x = df['user'].value_counts().head()
     df = round((df['user'].value_counts() / df.shape[0]) * 100, 2).reset_index().rename(columns={'index':'name','user':'percent'})
     return x, df
@@ -42,7 +67,6 @@ def random_color_func(word, font_size, position, orientation, random_state=None,
     return f"rgb({r}, {g}, {b})"
 
 def create_wordcloud(selected_user, df):
-
     f = open('stop_hinglish.txt', 'r')
     stop_words = f.read()
 
@@ -68,7 +92,6 @@ def create_wordcloud(selected_user, df):
     return df_wc
 
 def emoji_helper(selected_user, df):
-
     if selected_user != 'Overall':
         df = df[df['user'] == selected_user]
 
@@ -77,7 +100,6 @@ def emoji_helper(selected_user, df):
         emojis.extend([c for c in message if c in emoji.UNICODE_EMOJI['en']])
 
     emoji_df = pd.DataFrame(Counter(emojis).most_common(len(Counter(emojis))))
-
     return emoji_df
 
 def monthly_timeline(selected_user, df):
@@ -91,16 +113,13 @@ def monthly_timeline(selected_user, df):
         time.append(timeline['month'][i] + "-" + str(timeline['year'][i]))
 
     timeline['time'] = time
-
     return timeline
 
 def daily_timeline(selected_user, df):
-
     if selected_user != 'Overall':
         df = df[df['user'] == selected_user]
 
     daily_timeline = df.groupby('only_date').count()['message'].reset_index()
-
     return daily_timeline
 
 def week_activity_map(selected_user, df):
@@ -110,41 +129,40 @@ def week_activity_map(selected_user, df):
     return df['day_name'].value_counts()
 
 def month_activity_map(selected_user, df):
-
     if selected_user != 'Overall':
         df = df[df['user'] == selected_user]
 
     return df['month']
 
-def sentiment_analysis(selected_user,df):
-
+def sentiment_analysis(selected_user, df):
     if selected_user != 'Overall':
         df = df[df['user'] == selected_user]
 
+    # VADER sentiment analysis
     sentiments = SentimentIntensityAnalyzer()
-    df['positive'] = [sentiments.polarity_scores(i)["pos"] for i in df['message']]
-    df['negative'] = [sentiments.polarity_scores(i)["neg"] for i in df['message']]
-    df['neutral'] = [sentiments.polarity_scores(i)["neu"] for i in df['message']]
-    x = sum(df['positive'])
-    y = sum(df['negative'])
-    z = sum(df['neutral'])
+    df['happy'] = [sentiments.polarity_scores(i)["pos"] for i in df['message']]
+    df['sad'] = [sentiments.polarity_scores(i)["neg"] for i in df['message']]
+    df['ok'] = [sentiments.polarity_scores(i)["neu"] for i in df['message']]
+    
+    vader_score = sum(df['happy']) - sum(df['sad'])
 
-    def score(a, b, c):
-        if (a > b) and (a > c):
-            return "positive"
-        elif (b > a) and (b > c):
-            return "Negative"
-        elif (c > a) and (c > b):
-            return "Neutral"
-        else:
-            return "Undetermined"
+    # Naive Bayes sentiment analysis
+    nb_predictions = [nb_model.predict([msg])[0] for msg in df['message']]
+    nb_score = nb_predictions.count('pos') - nb_predictions.count('neg')
 
-    return score(x, y, z)
+    # Final sentiment score (average of VADER and Naive Bayes)
+    final_score = (vader_score + nb_score) / 2
+
+    if final_score > 0:
+        return "positive"
+    elif final_score < 0:
+        return "negative"
+    else:
+        return "neutral"
 
 def heatmap_activity(selected_user, df):
     if selected_user != 'Overall':
         df = df[df['user'] == selected_user]
 
     user_heatmap = df.pivot_table(index='day_name', columns='period', values='message', aggfunc='count').fillna(0)
-
     return user_heatmap
