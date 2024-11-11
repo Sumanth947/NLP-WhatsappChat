@@ -1,47 +1,63 @@
-ABSTRACT 
-The Analysis of WhatsApp Chat using NLP Models project aims to uncover meaningful insights from 
-WhatsApp conversations through natural language processing (NLP) techniques. By processing raw chat 
-data, the project focuses on identifying sentiment, classifying conversations into topics such as work, 
-personal, and casual, and revealing user communication patterns. These insights are visualized to provide 
-a clear understanding of user behavior and trends over time. The significance of this project lies in its 
-real-world applications across several domains, including customer service, mental health monitoring, 
-and market research. For instance, businesses can use chat analysis to enhance customer satisfaction, 
-while mental health professionals can monitor emotional distress through sentiment analysis. In a world 
-where over 2 billion people use WhatsApp, this project highlights the value of efficiently analyzing vast 
-conversational data to generate actionable insights, making it a powerful tool for informed decision
-making and improving outcomes in various sectors.
+# WhatsApp Chat Analyzer
 
+## Overview
+WhatsApp Chat Analyzer is a web application that processes and analyzes exported WhatsApp chat data to provide insights such as the total number of messages, most active users, sentiment analysis, word clouds, and more. The backend is built with FastAPI, and the frontend uses React for an interactive user experience.
 
-INTRODUCTION 
-The increasing use of messaging platforms like WhatsApp has resulted in an immense volume of 
-conversational data, which holds valuable insights into user behavior, sentiment, and communication 
-patterns. However, manually analyzing such large amounts of chat data is a time-consuming and 
-inefficient process. With advances in Natural Language Processing (NLP), it is now possible to automate 
-the analysis of chat data and extract meaningful insights in real time. 
-NLP models can be employed to process the text from WhatsApp conversations, enabling automatic 
-detection of patterns such as sentiment, topic classification, and emotional tone. Such analysis can benefit 
-various domains, from businesses looking to understand customer feedback to researchers studying 
-human communication. 
+## Features
+- **Upload WhatsApp Chat Data**: Users can upload `.txt` or `.csv` files containing exported chat data.
+- **Statistics Overview**: Get an overview of total messages, words, media shared, and links.
+- **Word Cloud Generation**: Visualize the most commonly used words in the chat.
+- **Emoji Analysis**: Discover the most frequently used emojis.
+- **Monthly and Daily Timelines**: View chat activity over time.
+- **Sentiment Analysis**: Understand the overall sentiment of the chat.
+- **Interactive Visuals**: Graphs and charts for detailed analysis.
 
-1.1 Rationale 
-The vast amount of chat data generated daily on platforms like WhatsApp has led to the need for 
-automated systems to process and analyze this information efficiently. Traditional methods of manually 
-evaluating chat data are impractical and insufficient. By applying NLP models to this data, we can uncover 
-hidden insights that could be beneficial for understanding user communication, identifying trends, and 
-making data-driven decisions. 
+## Technologies Used
+- **Backend**: FastAPI (Python)
+- **Frontend**: React.js, Vite.js
+- **Data Processing**: Pandas, NLTK, WordCloud
+- **Charting**: Matplotlib, Seaborn, React components
+- **Deployment**: Uvicorn (development server)
 
-1.2 Problem Statement 
-Manual analysis of WhatsApp conversations is not scalable due to the immense volume of data and the 
-complexity involved in processing natural language. Additionally, identifying patterns such as user 
-sentiment, recurring themes, and other language-based insights requires advanced techniques that cannot 
-be easily achieved through manual efforts. Thus, there is a need to implement an automated system that 
-leverages NLP models to analyze and classify chat data efficiently. 
+## Installation
 
-1.3 Objectives 
-1 To develop an NLP-based system that can automatically analyze WhatsApp chats and extract 
-insights such as sentiment, topics, and key phrases. 
-2 To classify chat messages into categories like positive, negative, or neutral, and understand user 
-behavior through sentiment analysis. 
-3 To build a model capable of identifying recurring themes or topics within chat conversations. 
-4 To create a visual representation of the analysis, making it easier for users to interpret the results 
-and take appropriate actions.
+### Prerequisites
+- Python 3.7+
+- Node.js 14+ and npm or Yarn
+
+### Backend Setup
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/username/whatsapp-chat-analyzer.git
+   cd whatsapp-chat-analyzer/pythonbackend
+## Usage
+1. Access the frontend at `http://localhost:5173`.
+2. Upload a WhatsApp chat file (either `.txt` or `.csv`).
+3. Click **Analyze Chat** to process the data.
+4. View the results, including statistics, word clouds, emoji analysis, and sentiment overview.
+
+## API Endpoints
+### POST `/api/analyze`
+- Uploads a chat file and returns analysis results.
+
+### GET `/api/wordcloud`
+- Returns a base64-encoded word cloud image.
+
+### GET `/api/emoji-analysis`
+- Provides a list of the most frequently used emojis in the chat.
+
+### GET `/api/timeline`
+- Returns data for monthly chat activity.
+
+## Contributing
+Contributions are welcome! Please fork the repository and submit a pull request with your changes.
+
+## License
+This project is licensed under the MIT License.
+
+## Acknowledgements
+- [FastAPI](https://fastapi.tiangolo.com/)
+- [React](https://reactjs.org/)
+- [NLTK](https://www.nltk.org/)
+- [WordCloud](https://github.com/amueller/word_cloud)
+
