@@ -2,12 +2,50 @@ import streamlit as st
 import preprocessor, helper
 import matplotlib.pyplot as plt
 import seaborn as sns
+import openai
+from datetime import datetime
+
+# Move the function definition to the top of the file, after imports
+def get_chatbot_response(prompt, chat_data):
+    """Generate chatbot response based on chat analysis"""
+    try:
+        # Create a context from chat data
+        context = f"""
+        Chat Statistics:
+        - Total Messages: {len(chat_data)}
+        - Time Period: {chat_data['date'].min()} to {chat_data['date'].max()}
+        - Number of Participants: {len(chat_data['user'].unique())}
+        """
+        
+        # Combine context and user prompt
+        full_prompt = f"{context}\n\nUser Question: {prompt}\n\nAnswer:"
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful chat analyzer assistant. Answer questions about the WhatsApp chat data provided."},
+                {"role": "user", "content": full_prompt}
+            ],
+            max_tokens=150,
+            temperature=0.7
+        )
+        
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error generating response: {str(e)}"
+
+# Initialize session state for chatbot
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
 
 # Initialize session state for uploaded file and selected user
 if "uploaded_file" not in st.session_state:
     st.session_state["uploaded_file"] = None
 if "selected_user" not in st.session_state:
     st.session_state["selected_user"] = "Overall"
+
+# Initialize OpenAI (you'll need to set this up with your API key)
+openai.api_key = 'your_open_api_key'
 
 # Streamlit Sidebar
 st.sidebar.title("WhatsApp Chat Analyzer")
@@ -123,17 +161,95 @@ if st.session_state["uploaded_file"]:
 
         # URL Sentiment Analysis
         st.title("URL Sentiment Analysis")
-        url_sentiments = helper.url_sentiment_analysis(selected_user, df)
-        if url_sentiments:
-            url_options = list(url_sentiments.keys())
-            selected_url = st.selectbox("Select a URL to view sentiment", url_options)
-            if selected_url:
-                sentiment, title, description = url_sentiments[selected_url]
-                st.write(f"**URL:** {selected_url}")
-                st.write(f"**Sentiment:** {sentiment}")
-                st.write(f"**Title:** {title}")
-                st.write(f"**Description:** {description}")
-        else:
-            st.write("No URLs found in the chat.")
+        try:
+            # Get URL sentiments
+            url_sentiments = helper.url_sentiment_analysis(selected_user, df)
+            
+            if url_sentiments and len(url_sentiments) > 0:
+                url_options = list(url_sentiments.keys())
+                
+                # Create a container for URL selection
+                url_container = st.container()
+                
+                with url_container:
+                    # Simple selectbox without session state
+                    selected_url = st.selectbox(
+                        "Select a URL to view sentiment", 
+                        url_options,
+                        key="url_select"
+                    )
+                    
+                    # Display URL analysis in a separate container
+                    analysis_container = st.container()
+                    
+                    with analysis_container:
+                        if selected_url:
+                            try:
+                                sentiment, title, description = url_sentiments[selected_url]
+                                
+                                st.markdown("---")
+                                st.subheader("URL Analysis")
+                                st.write(f"🔗 **URL:** {selected_url}")
+                                st.write(f"😊 **Sentiment:** {sentiment if sentiment else 'Not available'}")
+                                
+                                if title:
+                                    st.write(f"📑 **Title:** {title}")
+                                if description:
+                                    st.write(f"📝 **Description:** {description}")
+                                st.markdown("---")
+                                
+                            except Exception as url_error:
+                                st.error(f"Error analyzing this URL: {str(url_error)}")
+            else:
+                st.warning("No valid URLs found in the chat or unable to analyze URLs.")
+                
+        except Exception as e:
+            st.error(f"An error occurred while analyzing URLs: {str(e)}")
+            st.info("Try checking your internet connection or try again later.")
+
+        # Chatbot Interface
+        st.title("Chat Analysis Assistant")
+        
+        # Create columns for input and button
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            user_question = st.text_input(
+                "Ask me anything about your chat analysis:",
+                key="chatbot_input"
+            )
+        with col2:
+            submit_button = st.button("Ask", key="chatbot_button")
+
+        # Process the question when button is clicked
+        if submit_button and user_question:
+            with st.spinner("Analyzing..."):
+                try:
+                    response = get_chatbot_response(user_question, df)
+                    # Add to chat history
+                    st.session_state.chat_history.append({
+                        "question": user_question,
+                        "answer": response
+                    })
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
+
+        # Display chat history
+        if st.session_state.chat_history:
+            st.markdown("### Chat History")
+            for chat in st.session_state.chat_history:
+                st.markdown(f"**You:** {chat['question']}")
+                st.markdown(f"**🤖 Assistant:** {chat['answer']}")
+                st.markdown("---")
+
+        # Example questions without nested expander
+        st.markdown("### Example questions you can ask:")
+        st.markdown("""
+        - Who is the most active user in the chat?
+        - What time of day is the chat most active?
+        - What are the most common topics discussed?
+        - What's the overall sentiment of the chat?
+        - How many messages were sent on average per day?
+        - What are the most used emojis in the chat?
+        """)
 else:
     st.write("Please upload a chat file to start analysis.")
