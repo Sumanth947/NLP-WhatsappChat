@@ -1,0 +1,15 @@
+streamlit
+nltk
+urlextract
+wordcloud
+emoji
+scikit-learn
+beautifulsoup4
+seaborn
+openai
+transformers
+torch
+torchvision
+torchaudio
+python-dotenv
+textblob emoji 

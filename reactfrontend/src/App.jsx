@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../src/Components/ui/c
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { Loader2 } from "lucide-react";
 import GraphDisplay from './Components/ui/graphDisplay';  // Import the new component
+import ChatBot from './Components/ui/chatbot';
 
 function App() {
   const [file, setFile] = useState(null);
@@ -112,6 +113,11 @@ function App() {
 
               {/* Display the Graphs */}
               <GraphDisplay />
+
+              {/* Add ChatBot */}
+              <div className="mt-8">
+                <ChatBot />
+              </div>
             </div>
           </>
         )}

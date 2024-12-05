@@ -1,94 +1,63 @@
 import streamlit as st
-import preprocessor, helper
+from chatbot import get_chatbot_response
+import preprocessor
+import helper
 import matplotlib.pyplot as plt
 import seaborn as sns
-import openai
-from datetime import datetime
+from helper import count_links, extract_urls
 
-# Move the function definition to the top of the file, after imports
-def get_chatbot_response(prompt, chat_data):
-    """Generate chatbot response based on chat analysis"""
-    try:
-        # Create a context from chat data
-        context = f"""
-        Chat Statistics:
-        - Total Messages: {len(chat_data)}
-        - Time Period: {chat_data['date'].min()} to {chat_data['date'].max()}
-        - Number of Participants: {len(chat_data['user'].unique())}
-        """
-        
-        # Combine context and user prompt
-        full_prompt = f"{context}\n\nUser Question: {prompt}\n\nAnswer:"
-        
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a helpful chat analyzer assistant. Answer questions about the WhatsApp chat data provided."},
-                {"role": "user", "content": full_prompt}
-            ],
-            max_tokens=150,
-            temperature=0.7
-        )
-        
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"Error generating response: {str(e)}"
-
-# Initialize session state for chatbot
+# Initialize session state for chat history
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 
-# Initialize session state for uploaded file and selected user
-if "uploaded_file" not in st.session_state:
-    st.session_state["uploaded_file"] = None
-if "selected_user" not in st.session_state:
-    st.session_state["selected_user"] = "Overall"
-
-# Initialize OpenAI (you'll need to set this up with your API key)
-openai.api_key = 'your_open_api_key'
-
-# Streamlit Sidebar
-st.sidebar.title("WhatsApp Chat Analyzer")
-
-# File uploader
+# File upload
 uploaded_file = st.sidebar.file_uploader("Choose a file")
-if uploaded_file:
-    st.session_state["uploaded_file"] = uploaded_file  # Save file in session state
 
-# Check if a file has been uploaded
-if st.session_state["uploaded_file"]:
-    # Preprocess uploaded file
-    bytes_data = st.session_state["uploaded_file"].getvalue()
+# Main interface
+if uploaded_file is not None:
+    bytes_data = uploaded_file.getvalue()
     data = bytes_data.decode("utf-8")
-    df = preprocessor.preprocessor(data)
-
-    # Fetch unique users
+    df = preprocessor.preprocess(data)
+    
+    # Get unique users
     user_list = df['user'].unique().tolist()
-    if 'Group notification' in user_list:
-        user_list.remove('Group notification')
+    try:
+        user_list.remove('system_notification')
+    except ValueError:
+        pass
     user_list.sort()
     user_list.insert(0, "Overall")
+    
+    selected_user = st.sidebar.selectbox("Show analysis wrt", user_list)
 
-    # User selection (use session state to persist selection)
-    selected_user = st.sidebar.selectbox(
-        "Show analysis for", 
-        user_list, 
-        index=user_list.index(st.session_state["selected_user"])
-    )
-    st.session_state["selected_user"] = selected_user  # Save selection in session state
-
-    # Button to trigger analysis
-    if st.sidebar.button("Show Analysis"):
-        # Chat Statistics
-        st.title("Chat Statistics")
-        num_messages, words, num_media_messages, num_links = helper.fetch_stats(selected_user, df)
+    # Stats Area
+    stats = helper.fetch_stats(selected_user, df)
+    st.sidebar.write(f"Debug - Stats: {stats}")
+    num_messages, words, num_media_messages = stats
+    num_links = count_links(df)
+    urls = extract_urls(df)
+    
+    # Create tabs for Analysis and Chat
+    tab1, tab2 = st.tabs(["Analysis", "Chat"])
+    
+    with tab1:
+        st.title("Top Statistics")
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Messages", num_messages)
-        col2.metric("Words", words)
-        col3.metric("Media Shared", num_media_messages)
-        col4.metric("Links Shared", num_links)
 
-        # Monthly Timeline
+        with col1:
+            st.header("Total Messages")
+            st.title(num_messages)
+        with col2:
+            st.header("Total Words")
+            st.title(words)
+        with col3:
+            st.header("Media Shared")
+            st.title(num_media_messages)
+        with col4:
+            st.header("Links Shared")
+            st.title(num_links)
+
+        # Monthly timeline
         st.title("Monthly Timeline")
         timeline = helper.monthly_timeline(selected_user, df)
         fig, ax = plt.subplots()
@@ -96,7 +65,7 @@ if st.session_state["uploaded_file"]:
         plt.xticks(rotation='vertical')
         st.pyplot(fig)
 
-        # Daily Timeline
+        # Daily timeline
         st.title("Daily Timeline")
         daily_timeline = helper.daily_timeline(selected_user, df)
         fig, ax = plt.subplots()
@@ -104,152 +73,113 @@ if st.session_state["uploaded_file"]:
         plt.xticks(rotation='vertical')
         st.pyplot(fig)
 
-        # Activity Map
-        st.title("Activity Map")
+        # Activity map
+        st.title('Activity Map')
         col1, col2 = st.columns(2)
+
         with col1:
-            st.header("Most Busy Day")
+            st.header("Most busy day")
             busy_day = helper.week_activity_map(selected_user, df)
             fig, ax = plt.subplots()
-            ax.bar(busy_day.index, busy_day.values, color='blue')
+            ax.bar(busy_day.index, busy_day.values, color='purple')
             plt.xticks(rotation='vertical')
             st.pyplot(fig)
+
         with col2:
-            st.header("Most Busy Month")
+            st.header("Most busy month")
             busy_month = helper.month_activity_map(selected_user, df)
             fig, ax = plt.subplots()
             ax.bar(busy_month.index, busy_month.values, color='orange')
             plt.xticks(rotation='vertical')
             st.pyplot(fig)
 
-        # Weekly Heatmap
-        st.header("Weekly Activity Map")
-        user_heatmap = helper.heatmap_activity(selected_user, df)
+        # Weekly activity map
+        st.title("Weekly Activity Map")
+        user_heatmap = helper.activity_heatmap(selected_user, df)
         fig, ax = plt.subplots()
-        sns.heatmap(user_heatmap, ax=ax)
+        ax = sns.heatmap(user_heatmap)
         st.pyplot(fig)
 
-        # Word Cloud
-        st.title("Word Cloud")
-        df_wc = helper.create_wordcloud(selected_user, df)
-        fig, ax = plt.subplots()
-        ax.imshow(df_wc)
-        st.pyplot(fig)
-
-        # Emoji Analysis
-        st.title("Emoji Analysis")
-        emoji_df = helper.emoji_helper(selected_user, df).head(15)
-        st.dataframe(emoji_df)
-
-        # Sentiment Analysis
-        st.title("Sentiment Analysis")
-        result = helper.sentiment_analysis(selected_user, df)
-        st.text(result)
-
-        # Busiest Users
-        if selected_user == "Overall":
-            st.title("Most Active Users")
-            x, new_df = helper.most_active_user(df)
+        # Finding the busiest users in the group
+        if selected_user == 'Overall':
+            st.title('Most Busy Users')
+            x, new_df = helper.most_busy_users(df)
             fig, ax = plt.subplots()
+
             col1, col2 = st.columns(2)
+
             with col1:
-                ax.bar(x.index, x.values, color='yellow')
+                ax.bar(x.index, x.values, color='red')
                 plt.xticks(rotation='vertical')
                 st.pyplot(fig)
             with col2:
                 st.dataframe(new_df)
 
-        # URL Sentiment Analysis
-        st.title("URL Sentiment Analysis")
-        try:
-            # Get URL sentiments
-            url_sentiments = helper.url_sentiment_analysis(selected_user, df)
-            
-            if url_sentiments and len(url_sentiments) > 0:
-                url_options = list(url_sentiments.keys())
-                
-                # Create a container for URL selection
-                url_container = st.container()
-                
-                with url_container:
-                    # Simple selectbox without session state
-                    selected_url = st.selectbox(
-                        "Select a URL to view sentiment", 
-                        url_options,
-                        key="url_select"
-                    )
-                    
-                    # Display URL analysis in a separate container
-                    analysis_container = st.container()
-                    
-                    with analysis_container:
-                        if selected_url:
-                            try:
-                                sentiment, title, description = url_sentiments[selected_url]
-                                
-                                st.markdown("---")
-                                st.subheader("URL Analysis")
-                                st.write(f"🔗 **URL:** {selected_url}")
-                                st.write(f"😊 **Sentiment:** {sentiment if sentiment else 'Not available'}")
-                                
-                                if title:
-                                    st.write(f"📑 **Title:** {title}")
-                                if description:
-                                    st.write(f"📝 **Description:** {description}")
-                                st.markdown("---")
-                                
-                            except Exception as url_error:
-                                st.error(f"Error analyzing this URL: {str(url_error)}")
-            else:
-                st.warning("No valid URLs found in the chat or unable to analyze URLs.")
-                
-        except Exception as e:
-            st.error(f"An error occurred while analyzing URLs: {str(e)}")
-            st.info("Try checking your internet connection or try again later.")
+        # WordCloud
+        st.title("Wordcloud")
+        df_wc = helper.create_wordcloud(selected_user, df)
+        fig, ax = plt.subplots()
+        ax.imshow(df_wc)
+        st.pyplot(fig)
 
-        # Chatbot Interface
-        st.title("Chat Analysis Assistant")
-        
-        # Create columns for input and button
-        col1, col2 = st.columns([4, 1])
+        # Most common words
+        most_common_df = helper.most_common_words(selected_user, df)
+        fig, ax = plt.subplots()
+        ax.barh(most_common_df[0], most_common_df[1])
+        plt.xticks(rotation='vertical')
+        st.title('Most common words')
+        st.pyplot(fig)
+
+        # Emoji analysis
+        emoji_df = helper.emoji_helper(selected_user, df)
+        st.title("Emoji Analysis")
+        col1, col2 = st.columns(2)
         with col1:
-            user_question = st.text_input(
-                "Ask me anything about your chat analysis:",
-                key="chatbot_input"
-            )
+            st.dataframe(emoji_df)
         with col2:
-            submit_button = st.button("Ask", key="chatbot_button")
+            fig, ax = plt.subplots()
+            ax.pie(emoji_df[1].head(), labels=emoji_df[0].head(), autopct="%0.2f")
+            st.pyplot(fig)
 
-        # Process the question when button is clicked
-        if submit_button and user_question:
-            with st.spinner("Analyzing..."):
-                try:
-                    response = get_chatbot_response(user_question, df)
-                    # Add to chat history
-                    st.session_state.chat_history.append({
-                        "question": user_question,
-                        "answer": response
-                    })
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
+        # URL Analysis Section at the end
+        st.subheader("URL Analysis")
+        if urls:
+            selected_url = st.selectbox("Select a URL to open:", urls)
+            if st.button("Open URL"):
+                if selected_url:
+                    st.markdown(f"[Click here to open the URL]({selected_url})", unsafe_allow_html=True)
+        else:
+            st.write("No URLs found in the chat.")
+
+    # Chat tab
+    with tab2:
+        st.header("Chat with Bot")
+        
+        # Show data status
+        if df is not None and not df.empty:
+            st.success(f"Chat data loaded: {len(df)} messages")
+        
+        # Single chat input
+        user_input = st.text_input("Ask me anything:", key="single_chat_input")
+        
+        # When user submits a question
+        if user_input:
+            try:
+                response = get_chatbot_response(user_input, df)
+                st.session_state.chat_history.append(("You", user_input))
+                st.session_state.chat_history.append(("Bot", response))
+            except Exception as e:
+                st.error(f"Error occurred: {str(e)}")
 
         # Display chat history
         if st.session_state.chat_history:
-            st.markdown("### Chat History")
-            for chat in st.session_state.chat_history:
-                st.markdown(f"**You:** {chat['question']}")
-                st.markdown(f"**🤖 Assistant:** {chat['answer']}")
-                st.markdown("---")
+            st.write("Chat History:")
+            for role, message in st.session_state.chat_history:
+                if role == "You":
+                    st.markdown(f"**You:** {message}")
+                else:
+                    st.markdown(f"**Bot:** {message}")
 
-        # Example questions without nested expander
-        st.markdown("### Example questions you can ask:")
-        st.markdown("""
-        - Who is the most active user in the chat?
-        - What time of day is the chat most active?
-        - What are the most common topics discussed?
-        - What's the overall sentiment of the chat?
-        - How many messages were sent on average per day?
-        - What are the most used emojis in the chat?
-        """)
 else:
-    st.write("Please upload a chat file to start analysis.")
+    st.sidebar.warning("Please upload a WhatsApp chat file to begin analysis.")
+
