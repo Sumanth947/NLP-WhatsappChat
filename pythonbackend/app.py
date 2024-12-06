@@ -1,7 +1,6 @@
 import streamlit as st
 from chatbot import get_chatbot_response
-import preprocessor
-import helper
+import helper  # Import helper which contains preprocess
 import matplotlib.pyplot as plt
 import seaborn as sns
 from helper import count_links, extract_urls
@@ -13,11 +12,40 @@ if 'chat_history' not in st.session_state:
 # File upload
 uploaded_file = st.sidebar.file_uploader("Choose a file")
 
+# Create the heatmap
+if uploaded_file is not None:
+    bytes_data = uploaded_file.getvalue()
+    data = bytes_data.decode("utf-8")
+    
+    # Process the uploaded data using helper.preprocess()
+    df = helper.preprocess(data)
+
+    # Select user from the uploaded data
+    user_list = df['user'].unique().tolist()
+    user_list.sort()
+    user_list.insert(0, "Overall")  # Add 'Overall' as an option
+
+    # Streamlit selectbox for user selection (with a unique key)
+    selected_user = st.sidebar.selectbox("Show analysis wrt", user_list, key="select_user")
+
+    # Generate the heatmap
+    user_heatmap = helper.activity_heatmap(selected_user, df)
+
+    # Ensure that the heatmap data is not empty before plotting
+    if not user_heatmap.empty and user_heatmap.shape[0] > 0 and user_heatmap.shape[1] > 0:
+        fig, ax = plt.subplots()
+        sns.heatmap(user_heatmap, annot=True, cmap='coolwarm', ax=ax)
+        st.pyplot(fig)
+    else:
+        st.warning("No data available to display in the heatmap.")
+
 # Main interface
 if uploaded_file is not None:
     bytes_data = uploaded_file.getvalue()
     data = bytes_data.decode("utf-8")
-    df = preprocessor.preprocess(data)
+    
+    # Process the uploaded data using helper.preprocess()
+    df = helper.preprocess(data)
     
     # Get unique users
     user_list = df['user'].unique().tolist()
@@ -28,7 +56,8 @@ if uploaded_file is not None:
     user_list.sort()
     user_list.insert(0, "Overall")
     
-    selected_user = st.sidebar.selectbox("Show analysis wrt", user_list)
+    # Select user from the uploaded data (with a unique key)
+    selected_user = st.sidebar.selectbox("Show analysis wrt", user_list, key="select_user_2")
 
     # Stats Area
     stats = helper.fetch_stats(selected_user, df)
@@ -66,32 +95,32 @@ if uploaded_file is not None:
         st.pyplot(fig)
 
         # Daily timeline
-        st.title("Daily Timeline")
-        daily_timeline = helper.daily_timeline(selected_user, df)
-        fig, ax = plt.subplots()
-        ax.plot(daily_timeline['only_date'], daily_timeline['message'], color='black')
-        plt.xticks(rotation='vertical')
-        st.pyplot(fig)
+        # st.title("Daily Timeline")
+        # daily_timeline = helper.daily_timeline(selected_user, df)
+        # fig, ax = plt.subplots()
+        # ax.plot(daily_timeline['only_date'], daily_timeline['message'], color='black')
+        # plt.xticks(rotation='vertical')
+        # st.pyplot(fig)
 
         # Activity map
-        st.title('Activity Map')
-        col1, col2 = st.columns(2)
+        # st.title('Activity Map')
+        # col1, col2 = st.columns(2)
 
-        with col1:
-            st.header("Most busy day")
-            busy_day = helper.week_activity_map(selected_user, df)
-            fig, ax = plt.subplots()
-            ax.bar(busy_day.index, busy_day.values, color='purple')
-            plt.xticks(rotation='vertical')
-            st.pyplot(fig)
+        # with col1:
+        #     st.header("Most busy day")
+        #     busy_day = helper.week_activity_map(selected_user, df)
+        #     fig, ax = plt.subplots()
+        #     ax.bar(busy_day.index, busy_day.values, color='purple')
+        #     plt.xticks(rotation='vertical')
+        #     st.pyplot(fig)
 
-        with col2:
-            st.header("Most busy month")
-            busy_month = helper.month_activity_map(selected_user, df)
-            fig, ax = plt.subplots()
-            ax.bar(busy_month.index, busy_month.values, color='orange')
-            plt.xticks(rotation='vertical')
-            st.pyplot(fig)
+        # with col2:
+        #     st.header("Most busy month")
+        #     busy_month = helper.month_activity_map(selected_user, df)
+        #     fig, ax = plt.subplots()
+        #     ax.bar(busy_month['month'].tolist(), busy_month['message'].tolist(), color='orange')
+        #     plt.xticks(rotation='vertical')
+        #     st.pyplot(fig)
 
         # Weekly activity map
         st.title("Weekly Activity Map")
@@ -138,16 +167,22 @@ if uploaded_file is not None:
             st.dataframe(emoji_df)
         with col2:
             fig, ax = plt.subplots()
-            ax.pie(emoji_df[1].head(), labels=emoji_df[0].head(), autopct="%0.2f")
+            ax.pie(emoji_df['Count'].head(), labels=emoji_df['Emoji'].head(), autopct="%0.2f")
             st.pyplot(fig)
 
-        # URL Analysis Section at the end
+        # URL Analysis Section
         st.subheader("URL Analysis")
         if urls:
             selected_url = st.selectbox("Select a URL to open:", urls)
-            if st.button("Open URL"):
-                if selected_url:
-                    st.markdown(f"[Click here to open the URL]({selected_url})", unsafe_allow_html=True)
+            if selected_url:
+                st.markdown(f"[Click here to open the URL]({selected_url})", unsafe_allow_html=True)
+
+                # Optionally, you could add sentiment analysis, title, description, etc., if required
+                sentiment, title, description = helper.analyze_url(selected_url)
+                st.write(f"Sentiment: {sentiment}")
+                st.write(f"Title: {title}")
+                st.write(f"Description: {description}")
+
         else:
             st.write("No URLs found in the chat.")
 
@@ -182,4 +217,3 @@ if uploaded_file is not None:
 
 else:
     st.sidebar.warning("Please upload a WhatsApp chat file to begin analysis.")
-

@@ -4,179 +4,96 @@ import pandas as pd
 from collections import Counter
 import emoji
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.model_selection import train_test_split
-from sklearn.naive_bayes import MultinomialNB
-from sklearn.pipeline import make_pipeline
-from random import randint
-from nltk.corpus import movie_reviews
+import nltk
 import requests
 from bs4 import BeautifulSoup
-import nltk
-from transformers import AutoModelForCausalLM, AutoTokenizer
 import re
 
 # Download necessary NLTK data
-nltk.download('movie_reviews')
 nltk.download('vader_lexicon')
 
 # Initialize tools
 extract = URLExtract()
 sentiments = SentimentIntensityAnalyzer()
 
-# Train a Naive Bayes Model on NLTK movie reviews dataset
-def train_naive_bayes():
-    documents = [(movie_reviews.raw(fileid), category)
-                 for category in movie_reviews.categories()
-                 for fileid in movie_reviews.fileids(category)]
-    texts, labels = zip(*documents)
-    X_train, X_test, y_train, y_test = train_test_split(texts, labels, test_size=0.2, random_state=42)
-    model = make_pipeline(CountVectorizer(), MultinomialNB())
-    model.fit(X_train, y_train)
-    return model
-
-# Initialize Naive Bayes model
-nb_model = train_naive_bayes()
-
-# Fetch chat statistics
-def fetch_stats(selected_user, df):
-    if selected_user != 'Overall':
-        df = df[df['user'] == selected_user]
-
-    num_messages = df.shape[0]
-    words = df['message'].str.split().str.len().sum()
-    num_media_messages = df[df['message'] == '<Media omitted>'].shape[0]
-
-    return num_messages, words, num_media_messages
-
-# Fetch most active users
-def most_active_user(df):
-    x = df['user'].value_counts().head()
-    df = round((df['user'].value_counts() / df.shape[0]) * 100, 2).reset_index().rename(columns={'index': 'name', 'user': 'percent'})
-    return x, df
-
-# Create word cloud
-def create_wordcloud(selected_user, df):
-    with open('stop_hinglish.txt', 'r') as f:
-        stop_words = f.read()
-    with open('stopwords-hindi.txt', 'r', encoding='utf-8') as f1:
-        stop_words_hindi = f1.read()
-
-    if selected_user != 'Overall':
-        df = df[df['user'] == selected_user]
-
-    # Convert all messages to strings and handle NaN values
-    temp = df.copy()
-    temp['message'] = temp['message'].apply(lambda x: str(x) if pd.notnull(x) else "")
-    
-    # Remove stop words
-    temp['message'] = temp['message'].apply(remove_stop_words)
-    
-    # Create word cloud
-    if temp['message'].str.strip().str.len().sum() > 0:
-        wc = WordCloud(width=500, height=500, min_font_size=10, background_color='white')
-        df_wc = wc.generate(temp['message'].str.cat(sep=" "))
-        return df_wc
-    else:
-        return None
-
-# Generate random colors for word cloud
-def random_color_func(word, font_size, position, orientation, random_state=None, **kwargs):
-    r, g, b = randint(0, 255), randint(0, 255), randint(0, 255)
-    return f"rgb({r}, {g}, {b})"
-
-# Emoji analysis
-def emoji_helper(selected_user, df):
-    if selected_user != 'Overall':
-        df = df[df['user'] == selected_user]
-
-    # Convert messages to strings and handle NaN values
-    messages = df['message'].apply(lambda x: str(x) if pd.notnull(x) else "")
-    
-    emojis = []
-    for message in messages:
-        try:
-            emojis.extend([c for c in message if c in emoji.UNICODE_EMOJI['en']])
-        except Exception as e:
-            print(f"Error processing message for emojis: {e}")
-            continue
-    
-    emoji_df = pd.DataFrame(Counter(emojis).most_common(), columns=['Emoji', 'Count'])
-    
-    return emoji_df if not emoji_df.empty else pd.DataFrame(columns=['Emoji', 'Count'])
-
-# Monthly timeline
-def monthly_timeline(selected_user, df):
-    if selected_user != 'Overall':
-        df = df[df['user'] == selected_user]
-    timeline = df.groupby(['year', 'month_num', 'month']).count()['message'].reset_index()
-    timeline['time'] = timeline.apply(lambda x: f"{x['month']}-{x['year']}", axis=1)
-    return timeline
-
-# Daily timeline
-def daily_timeline(selected_user, df):
-    if selected_user != 'Overall':
-        df = df[df['user'] == selected_user]
-    daily_timeline = df.groupby('only_date').count()['message'].reset_index()
-    return daily_timeline
-
-# Weekly activity map
-def week_activity_map(selected_user, df):
-    if selected_user != 'Overall':
-        df = df[df['user'] == selected_user]
-    return df['day_name'].value_counts()
-
-# Monthly activity map
-def month_activity_map(selected_user, df):
-    if selected_user != 'Overall':
-        df = df[df['user'] == selected_user]
-    return df['month']
-
-# Heatmap activity
-def heatmap_activity(selected_user, df):
-    if selected_user != 'Overall':
-        df = df[df['user'] == selected_user]
-    user_heatmap = df.pivot_table(index='day_name', columns='period', values='message', aggfunc='count').fillna(0)
-    return user_heatmap
-
-# Sentiment analysis
-def sentiment_analysis(selected_user, df):
-    if selected_user != 'Overall':
-        df = df[df['user'] == selected_user]
-    
-    # Convert messages to strings and handle NaN values
-    df['message'] = df['message'].apply(lambda x: str(x) if pd.notnull(x) else "")
-    
+# Preprocess the chat data
+def preprocess(data):
+    """
+    Preprocess the WhatsApp chat data.
+    """
     try:
-        # Calculate sentiment scores
-        vader_scores = df['message'].apply(lambda x: sentiments.polarity_scores(x)['compound'])
+        # Pattern for date and time
+        pattern = r'\d{1,2}/\d{1,2}/\d{4},\s\d{1,2}:\d{2}\s[ap]m\s-\s'
         
-        # Calculate average sentiment
-        average_sentiment = vader_scores.mean()
+        messages = re.split(pattern, data)[1:]
+        dates = re.findall(pattern, data)
         
-        # Categorize sentiments
-        sentiment_counts = pd.cut(vader_scores, 
-                                bins=[-1, -0.1, 0.1, 1], 
-                                labels=['Negative', 'Neutral', 'Positive']).value_counts()
+        df = pd.DataFrame({'user_message': messages, 'message_date': dates})
         
-        return {
-            'average_sentiment': average_sentiment,
-            'sentiment_distribution': sentiment_counts,
-            'detailed_scores': vader_scores
-        }
+        # Convert message_date type
+        df['message_date'] = pd.to_datetime(df['message_date'], format='%d/%m/%Y, %I:%M %p - ', errors='coerce')
+        
+        users = []
+        messages = []
+        
+        for message in df['user_message']:
+            entry = re.split('((?:\+\d{1,3}\s\d{5}\s\d{5}|[^:]+)):\s', message)
+            if len(entry) > 1:  # Regular message
+                users.append(entry[1].strip())
+                messages.append(entry[2].strip())
+            else:  # System message or no colon
+                users.append('system_notification')
+                messages.append(entry[0].strip())
+            
+        df['user'] = users
+        df['message'] = messages
+        df.drop('user_message', axis=1, inplace=True)
+        
+        # Extract time features
+        df['year'] = df['message_date'].dt.year
+        df['month_num'] = df['message_date'].dt.month
+        df['month'] = df['message_date'].dt.strftime('%B')
+        df['day'] = df['message_date'].dt.day
+        df['day_name'] = df['message_date'].dt.day_name()
+        df['hour'] = df['message_date'].dt.hour
+        df['minute'] = df['message_date'].dt.minute
+        df['only_date'] = df['message_date'].dt.date
+        
+        # Clean up user names (remove phone numbers for privacy)
+        df['user'] = df['user'].apply(lambda x: x.split('(')[0].strip() if '(' in x else x)
+        df['user'] = df['user'].apply(lambda x: 'Anonymous' if x.startswith('+91') else x)
+        
+        return df
+        
     except Exception as e:
-        print(f"Error in sentiment analysis: {e}")
-        return None
+        print(f"Error in preprocessing: {e}")
+        return pd.DataFrame()  # Return empty DataFrame on error
 
-# URL sentiment analysis
-def url_sentiment_analysis(selected_user, df):
+# Count links in messages
+def count_links(df):
+    url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+    links_count = df['message'].astype(str).str.count(url_pattern).sum()
+    return links_count
+
+# Extract URLs from messages
+def extract_urls(df):
+    url_pattern = r'(http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+)'
+    urls = df['message'].str.extractall(url_pattern)[0].unique()
+    return urls.tolist()
+
+# Generate activity heatmap
+def activity_heatmap(selected_user, df):
     if selected_user != 'Overall':
         df = df[df['user'] == selected_user]
-    urls = [url for message in df['message'] for url in extract.find_urls(message)]
-    return {url: scrape_url_sentiment(url) for url in urls}
+    
+    df['hour'] = pd.to_datetime(df['message_date']).dt.hour
+    df['day_name'] = pd.to_datetime(df['message_date']).dt.day_name()
+    
+    heatmap_data = df.pivot_table(index='day_name', columns='hour', values='message', aggfunc='count').fillna(0)
+    return heatmap_data
 
-# Scrape URL content and perform sentiment analysis
-def scrape_url_sentiment(url):
+# Sentiment analysis for URLs
+def analyze_url(url):
     try:
         response = requests.get(url, timeout=5)
         soup = BeautifulSoup(response.content, 'html.parser')
@@ -188,178 +105,114 @@ def scrape_url_sentiment(url):
         sentiment_score = sentiments.polarity_scores(text)['compound']
         sentiment = "Positive" if sentiment_score > 0.05 else "Negative" if sentiment_score < -0.05 else "Neutral"
         return sentiment, title, description_text
-    except Exception:
+    except Exception as e:
         return "Error", "Error fetching URL", "Error"
 
-def create_heatmap(selected_user, df):
+# Fetch statistics for the selected user
+def fetch_stats(selected_user, df):
     if selected_user != 'Overall':
         df = df[df['user'] == selected_user]
     
-    if df.empty:
-        return pd.DataFrame()  # Return empty DataFrame if no data
+    num_messages = df.shape[0]  # Total number of messages
     
-    try:
-        # Create period column
-        df['period'] = df['day_name'] + '-' + df['hour'].astype(str)
-        
-        # Create pivot table with default value
-        user_heatmap = df.pivot_table(
-            index='day_name', 
-            columns='hour',
-            values='message',
-            aggfunc='count',
-            fill_value=0
-        )
-        
-        # Ensure we have some data
-        if user_heatmap.empty or user_heatmap.isna().all().all():
-            return pd.DataFrame()
-            
-        return user_heatmap
-        
-    except Exception as e:
-        print(f"Error creating heatmap: {e}")
-        return pd.DataFrame()
-
-def remove_stop_words(message):
-    if pd.isna(message) or not isinstance(message, str):
-        return ""
+    # Ensure 'message' column is treated as strings and handle NaN values
+    df['message'] = df['message'].fillna('')  # Replace NaN with an empty string
+    df['message'] = df['message'].astype(str)  # Convert to string
     
-    try:
-        return " ".join([word for word in str(message).lower().split() 
-                        if word not in stop_words and word not in stop_words_hindi])
-    except Exception as e:
-        print(f"Error processing message: {e}")
-        return ""
+    words = df['message'].str.split().str.len().sum()  # Total number of words
+    num_media_messages = df[df['message'] == '<Media omitted>'].shape[0]  # Count media messages
+    return num_messages, words, num_media_messages
 
-def initialize_model():
-    try:
-        # Suppress torch warnings
-        import warnings
-        warnings.filterwarnings("ignore", category=UserWarning)
-        
-        # Initialize your model here
-        model = AutoModelForCausalLM.from_pretrained("your_model_name")
-        tokenizer = AutoTokenizer.from_pretrained("your_model_name")
-        
-        return model, tokenizer
-    except Exception as e:
-        print(f"Error initializing model: {e}")
-        return None, None
-
-def process_chatbot_response(question, model, tokenizer):
-    try:
-        if model is None or tokenizer is None:
-            return "Sorry, the chatbot is not available at the moment."
-            
-        # Your existing chatbot logic here
-        inputs = tokenizer(question, return_tensors="pt")
-        outputs = model.generate(**inputs)
-        response = tokenizer.decode(outputs[0])
-        
-        return response
-    except Exception as e:
-        print(f"Error processing chatbot response: {e}")
-        return "Sorry, I couldn't process your question. Please try again."
-
-def activity_heatmap(selected_user, df):
-    """
-    Generate a heatmap of user activity by day of the week and hour of the day.
-    """
-    if selected_user != "Overall":
+# Monthly timeline function
+def monthly_timeline(selected_user, df):
+    if selected_user != 'Overall':
         df = df[df['user'] == selected_user]
     
-    # Create a pivot table for heatmap
-    heatmap_data = df.pivot_table(index='day_name', columns='hour', values='message', aggfunc='count').fillna(0)
-    
-    # Reorder the days of the week
-    days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-    heatmap_data = heatmap_data.reindex(days_order)
-    
-    return heatmap_data
+    timeline = df.groupby(['year', 'month']).count()['message'].reset_index()
+    timeline['time'] = timeline['month'] + ' ' + timeline['year'].astype(str)
+    return timeline[['time', 'message']]
 
+# Daily timeline function
+def daily_timeline(selected_user, df):
+    if selected_user != 'Overall':
+        df = df[df['user'] == selected_user]
+    
+    daily_timeline = df.groupby('only_date').count()['message'].reset_index()
+    return daily_timeline
+
+# Week activity map function
+def week_activity_map(selected_user, df):
+    if selected_user != 'Overall':
+        df = df[df['user'] == selected_user]
+    
+    # Create a new column for the day of the week
+    df['day_name'] = df['message_date'].dt.day_name()
+    
+    # Count the number of messages for each day of the week
+    week_activity = df.groupby('day_name').count()['message'].reindex(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])
+    
+    return week_activity
+
+# Month activity map function
+def month_activity_map(selected_user, df):
+    if selected_user != 'Overall':
+        df = df[df['user'] == selected_user]
+    
+    # Count the number of messages for each month
+    month_activity = df.groupby('month').count()['message'].reset_index()
+    return month_activity
+
+# Most busy users function
 def most_busy_users(df):
-    """
-    Find the most active users in the chat.
-    Returns:
-    - x: Series with user message counts
-    - new_df: DataFrame with user stats
-    """
-    # Remove group notifications
-    df = df[df['user'] != 'system_notification']
-    
-    # Count messages by user
-    x = df['user'].value_counts()
-    
-    # Calculate percentage
-    df_stats = round((df['user'].value_counts() / df.shape[0]) * 100, 2).reset_index()
-    df_stats.columns = ['name', 'percent']
-    
-    return x, df_stats
+    user_counts = df['user'].value_counts()  # Count messages per user
+    most_busy = user_counts[user_counts > 0]  # Filter out users with no messages
+    return most_busy, most_busy.reset_index(name='message_count').rename(columns={'index': 'user'})
 
+# Create word cloud function
 def create_wordcloud(selected_user, df):
-    """
-    Create a word cloud from messages.
-    """
     if selected_user != 'Overall':
         df = df[df['user'] == selected_user]
-
-    # Remove group notifications, media messages, and links
-    temp = df[df['user'] != 'system_notification']
-    temp = temp[temp['message'] != '<Media omitted>']
-
-    wc = WordCloud(width=500, height=500, min_font_size=10, background_color='white')
-    df_wc = wc.generate(temp['message'].str.cat(sep=" "))
-    return df_wc
-
-def most_common_words(selected_user, df):
-    """
-    Find most common words in messages.
-    """
-    if selected_user != 'Overall':
-        df = df[df['user'] == selected_user]
-
-    temp = df[df['user'] != 'system_notification']
-    temp = temp[temp['message'] != '<Media omitted>']
-
-    words = []
-    for message in temp['message']:
-        words.extend(message.lower().split())
-
-    # Get most common words
-    most_common_df = pd.DataFrame(Counter(words).most_common(20))
-    return most_common_df
-
-def emoji_helper(selected_user, df):
-    """
-    Analyze emoji usage in messages.
-    """
-    if selected_user != 'Overall':
-        df = df[df['user'] == selected_user]
-
-    emojis = []
-    for message in df['message']:
-        if isinstance(message, str):
-            emojis.extend([c for c in message if c in emoji.EMOJI_DATA])
-
-    emoji_df = pd.DataFrame(Counter(emojis).most_common(len(Counter(emojis))))
-    return emoji_df
-
-def count_links(df):
-    """
-    Count the number of links shared in the chat.
-    """
-    url_pattern = r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
     
-    # Ensure the 'message' column is treated as string and handle NaN values
-    links_count = df['message'].astype(str).str.count(url_pattern).sum()
-    return links_count
+    # Combine all messages into a single string
+    all_messages = ' '.join(df['message'].astype(str))
+    
+    # Generate the word cloud
+    wordcloud = WordCloud(width=800, height=400, background_color='white').generate(all_messages)
+    
+    return wordcloud
 
-def extract_urls(df):
-    """
-    Extract all URLs from the chat messages.
-    Returns a list of unique URLs.
-    """
-    url_pattern = r'(http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+)'
-    urls = df['message'].str.extractall(url_pattern)[0].unique()  # Extract all URLs and get unique ones
-    return urls.tolist()  # Return as a list
+# Most common words function
+def most_common_words(selected_user, df, top_n=10):
+    if selected_user != 'Overall':
+        df = df[df['user'] == selected_user]
+    
+    # Combine all messages into a single string
+    all_messages = ' '.join(df['message'].astype(str))
+    
+    # Remove punctuation and split into words
+    words = re.findall(r'\w+', all_messages.lower())
+    
+    # Count the frequency of each word
+    most_common = Counter(words).most_common(top_n)
+    
+    # Split the result into two lists: words and their counts
+    words, counts = zip(*most_common) if most_common else ([], [])
+    
+    return words, counts
+
+# Emoji helper function
+def emoji_helper(selected_user, df):
+    if selected_user != 'Overall':
+        df = df[df['user'] == selected_user]
+    
+    # Extract emojis from messages
+    all_emojis = ''.join(df['message'].astype(str).apply(lambda x: ''.join(c for c in x if c in emoji.EMOJI_DATA)))
+    
+    # Count the frequency of each emoji
+    emoji_counts = Counter(all_emojis)
+    
+    # Create a DataFrame for the emoji counts
+    emoji_df = pd.DataFrame(emoji_counts.items(), columns=['Emoji', 'Count'])
+    emoji_df = emoji_df.sort_values(by='Count', ascending=False).reset_index(drop=True)
+    
+    return emoji_df
